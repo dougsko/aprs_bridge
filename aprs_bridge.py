@@ -5,16 +5,17 @@ import pe.app
 import logging
 
 import random
+import string
 
 def create_aprs_message(dest_callsign: str, message: str) -> bytearray:
     # Step 1: Pad the destination callsign to 9 characters
     padded_callsign = dest_callsign.ljust(9)[:9]  # Ensure it's exactly 9 characters
 
-    # Step 2: Generate a random acknowledgment ID (between 10 and 99, for example)
-    ack_id = str(random.randint(10, 99))
-
-    # Step 3: Construct the APRS message
-    aprs_message = f':{padded_callsign}:{message}{{{ack_id}}}'
+    # Generate a random 3-character acknowledgment string (letters and digits)
+    ack = ''.join(random.choices(string.ascii_uppercase + string.digits, k=3))
+    
+    # Format the APRS message
+    aprs_message = f":{dest_callsign}:{message}{{{ack}"
 
     # Step 4: Return the message as a bytearray
     return bytearray(aprs_message, 'utf-8')
@@ -34,7 +35,7 @@ def extract_text_from_bytearray(data: bytearray) -> str:
     if start != -1 and end != -1:
         return text[start:end].strip()
     else:
-        return ''  # Return an empty string if the delimiters are not found
+        return text  # Return an empty string if the delimiters are not found
 
 
 # Configure logging to capture debug output
@@ -75,7 +76,7 @@ app.use_custom_handler(MyReceiveHandler())
 
 
 # Define server details
-server_host = '127.0.0.1'
+server_host = 'inovato'
 server_port = 8000
 
 # Start the application and connect to the server
@@ -92,7 +93,7 @@ try:
     print("Connected to server and monitoring messages...")
     app.engine.ask_callsigns_heard_on_port(0)  # Optionally ask for heard callsigns
     #app.register_callsigns("K3DEP")
-    app.send_unproto(0, "K4DEP", "APRS", create_aprs_message("APRS", "HEY THERE"))
+    app.send_unproto(0, "K3DEP", "APRS", "dougsko: hey whats going on?", ["WIDE1-1"])
     # Keep running until interrupted
 #    app.run()  # This call will block until `app.stop()` is called
 except KeyboardInterrupt:
