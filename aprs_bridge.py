@@ -11,8 +11,8 @@ from nio import AsyncClient, RoomMessageText, LoginResponse, MatrixRoom, RoomMes
 
 # Function to create APRS message
 def create_aprs_message(dest_callsign: str, message: str) -> bytearray:
-    padded_callsign = dest_callsign.ljust(9)[:9]
-    ack = ''.join(random.choices(string.ascii_uppercase + string.digits, k=3))
+    # padded_callsign = dest_callsign.ljust(9)[:9]
+    # ack = ''.join(random.choices(string.ascii_uppercase + string.digits, k=3))
     aprs_message = f"{message}"
     return bytearray(aprs_message, 'utf-8')
 
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     parser.add_argument('--matrix-server', type=str, required=False, default='http://wart:8008', help="Matrix server hostname")
     parser.add_argument('--matrix-room', type=str, required=False, default='Testing', help="Matrix room to join")
     parser.add_argument('--matrix-username', type=str, default="aprs_bot", help="Matrix bot username")
-    parser.add_argument('--matrix-password', type=str, required=False, default='dougsko123', help="Matrix bot password")
+    parser.add_argument('--matrix-password', type=str, required=True, help="Matrix bot password")
     args = parser.parse_args()
 
     # Run the APRS and Matrix bridge
