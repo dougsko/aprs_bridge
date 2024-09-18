@@ -1,20 +1,34 @@
 #!/usr/bin/env python3
 
-#!/usr/bin/env python3
-
 import asyncio
-from nio import AsyncClient, LoginResponse, RoomMessageText
+from nio import AsyncClient, LoginResponse, RoomMessageText, ClientConfig
+import ssl
+import certifi
+from httpx import Client
+
+# Custom function to disable SSL verification for self-signed certs
+def create_insecure_ssl_context():
+    # Create an SSL context that ignores verification
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)  # Force TLSv1.2
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    return ssl_context
 
 # Basic Matrix bot function
 async def basic_matrix_bot():
     # Matrix server, username, password, and room details
-    matrix_server = "http://wart:8008"
+    matrix_server = "http://inovato:8008"  # Use HTTPS and port 8448 for the Matrix server
     matrix_username = "aprs_bot"
     matrix_password = "dougsko123"
-    matrix_room = "testing"
+    matrix_room = "!testing:inovato:8008"
 
-    # Initialize the Matrix client
-    matrix_client = AsyncClient(matrix_server, matrix_username)
+    # SSL context to disable certificate verification (for self-signed certs)
+    ssl_context = create_insecure_ssl_context()
+
+    # Initialize the Matrix client and disable SSL verification
+    config = ClientConfig()
+    matrix_client = AsyncClient(matrix_server, matrix_username, config=config)
+    matrix_client.transport_adapter = Client(verify=ssl_context)  # Disable SSL verification
 
     # Login to Matrix
     response = await matrix_client.login(matrix_password)
