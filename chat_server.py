@@ -10,6 +10,8 @@ import pe
 import pe.app
 import zlib
 import json  # Import JSON library to handle JSON encoding/decoding
+import traceback
+import base64
 
 HOST = '127.0.0.1'
 PORT = 6789
@@ -19,7 +21,7 @@ MAX_ROWS = 100
 APRS_SERVER_HOST = 'inovato'
 APRS_SERVER_PORT = 8000
 APRS_DEST_CALLSIGN = 'APRS'
-USE_COMPRESSION = False
+USE_COMPRESSION = True
 
 
 class APRSReceiveHandler(pe.ReceiveHandler):
@@ -28,13 +30,28 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         self.loop = asyncio.get_event_loop()
 
     def monitored_own(self, port, call_from, call_to, text, data):
-        aprs_message = self.extract_text_from_bytearray(data)
-        print(f"APRS message received: {aprs_message}")
-        self.loop.run_until_complete(self.handle_aprs_message(call_from, aprs_message))
+        message = self.extract_text_from_bytearray(data)
+        print(f"APRS message received: {message}")
+        self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
+
+    def extract_text_from_bytearray(self, data: bytearray) -> str:
+        if USE_COMPRESSION:
+            try:
+                # Attempt decompression
+                print(f"Attempting to decompress message: {data}")
+                return zlib.decompress(base64.b64decode(data)).decode('utf-8')
+            except Exception:
+                # Catch any other unexpected errors and log the traceback
+                print(traceback.format_exc())
+                return data.decode('utf-8', errors='ignore')
+        else:
+            # If compression is not used, just decode the data directly
+            return data.decode('utf-8', errors='ignore')
 
     async def handle_aprs_message(self, call_from, aprs_message):
         # Now this function is awaited asynchronously
         print("inside handle_aprs_message")
+        print(f"aprs_message is {aprs_message}")
         try:
             # Parse the message from JSON format
             aprs_data = json.loads(aprs_message)
@@ -55,11 +72,6 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         }
         self.irc_server.store_message(timestamp, username, message)
         await self.irc_server.broadcast_aprs_message(json.dumps(message_dict))
-
-    def extract_text_from_bytearray(self, data: bytearray) -> str:
-        decompress_message = data
-        # decompress_message = zlib.decompress(data)
-        return decompress_message.decode('utf-8', errors='ignore')
 
 
 class ChatServer:
@@ -105,20 +117,19 @@ class ChatServer:
         # Encode it into a JSON string
         message_json = json.dumps(message_dict)
 
-        # Store the message in the database
-        # self.store_message(timestamp, username, message)
-        
         # Send the message over APRS
         self.send_aprs_message(message_json)
 
     def send_aprs_message(self, message):
-        aprs_message = self.create_aprs_message(APRS_DEST_CALLSIGN, message)
-        self.aprs_app.send_unproto(0, "K3DEP", APRS_DEST_CALLSIGN, aprs_message)
+        message = self.create_aprs_message(message)
+        self.aprs_app.send_unproto(0, "K3DEP", APRS_DEST_CALLSIGN, message)
 
-    def create_aprs_message(self, dest_callsign: str, message: str) -> bytearray:
-        compressed_message = message.encode('utf-8')
-        # compressed_message = zlib.compress(message.encode('utf-8'))
-        return bytearray(compressed_message)
+    def create_aprs_message(self, message: str) -> bytearray:
+        encoded_message = message.encode('utf-8')
+        if USE_COMPRESSION:
+            return base64.b64encode(zlib.compress(encoded_message))
+            # return zlib.compress(encoded_message)
+        return bytearray(encoded_message)
 
     async def broadcast_aprs_message(self, message):
         if not self.clients:
