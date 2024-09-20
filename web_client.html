@@ -39,7 +39,19 @@
         };
 
         socket.onmessage = function (event) {
-            chat.innerHTML += '<p>' + event.data + '</p>';
+            let formattedMessage;
+            try {
+                const data = JSON.parse(event.data);
+                const timestamp = data.timestamp;
+                const username = data.username;
+                const message = data.message;
+
+                formattedMessage = `[${timestamp}] ${username}: ${message}`;
+            } catch (e) {
+                formattedMessage = event.data;
+            }
+
+            chat.innerHTML += '<p>' + formattedMessage + '</p>';
             chat.scrollTop = chat.scrollHeight;
         };
 
@@ -63,5 +75,4 @@
         });
     </script>
 </body>
-
 </html>

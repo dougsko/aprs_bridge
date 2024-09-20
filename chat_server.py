@@ -9,6 +9,7 @@ from datetime import datetime
 import pe
 import pe.app
 import zlib
+import json  # Import JSON library to handle JSON encoding/decoding
 
 HOST = '127.0.0.1'
 PORT = 6789
@@ -28,19 +29,35 @@ class APRSReceiveHandler(pe.ReceiveHandler):
     def monitored_own(self, port, call_from, call_to, text, data):
         aprs_message = self.extract_text_from_bytearray(data)
         print(f"APRS message received: {aprs_message}")
-        self.loop.run_until_complete(self.handle_aprs_message(aprs_message))
+        self.loop.run_until_complete(self.handle_aprs_message(call_from, aprs_message))
 
-    async def handle_aprs_message(self, aprs_message):
+    async def handle_aprs_message(self, call_from, aprs_message):
         # Now this function is awaited asynchronously
         print("inside handle_aprs_message")
-        timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
-        username = 'APRS'
-        # formatted_message = f'[{timestamp}] {username}: {aprs_message}'
-        self.irc_server.store_message(timestamp, username, aprs_message)
-        await self.irc_server.broadcast_aprs_message(aprs_message)
+        try:
+            # Parse the message from JSON format
+            aprs_data = json.loads(aprs_message)
+            print(aprs_data)
+            timestamp = aprs_data.get('timestamp', datetime.now().strftime('%m/%d/%y %H:%M'))
+            username = aprs_data.get('username', 'unknown')
+            message = aprs_data.get('message', '')
+        except json.JSONDecodeError:
+            print("Error decoding APRS message JSON")
+            timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
+            username = call_from
+            message = aprs_message
+
+        message_dict = {
+            'timestamp': timestamp,
+            'username': username,
+            'message': message
+        }
+        self.irc_server.store_message(timestamp, username, message)
+        await self.irc_server.broadcast_aprs_message(json.dumps(message_dict))
 
     def extract_text_from_bytearray(self, data: bytearray) -> str:
-        decompress_message = data #zlib.decompress(data)
+        decompress_message = data
+        # decompress_message = zlib.decompress(data)
         return decompress_message.decode('utf-8', errors='ignore')
 
 
@@ -76,26 +93,32 @@ class ChatServer:
     async def broadcast(self, message, websocket):
         timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
         username = self.clients[websocket]
-        formatted_message = f'[{timestamp}] {username}: {message}'
-        self.store_message(timestamp, username, message)
-        clients_to_remove = []
-        for client in self.clients:
-            try:
-                await client.send(formatted_message)
-            except:
-                clients_to_remove.append(client)
-        for client in clients_to_remove:
-            await self.remove_client(client)
-        self.send_aprs_message(formatted_message)
+        
+        # Construct the message dictionary
+        message_dict = {
+            'timestamp': timestamp,
+            'username': username,
+            'message': message
+        }
+
+        # Encode it into a JSON string
+        message_json = json.dumps(message_dict)
+
+        # Store the message in the database
+        # self.store_message(timestamp, username, message)
+        
+        # Send the message over APRS
+        self.send_aprs_message(message_json)
 
     def send_aprs_message(self, message):
         aprs_message = self.create_aprs_message(APRS_DEST_CALLSIGN, message)
         self.aprs_app.send_unproto(0, "K3DEP", APRS_DEST_CALLSIGN, aprs_message)
 
     def create_aprs_message(self, dest_callsign: str, message: str) -> bytearray:
-        compressed_message = message.encode('utf-8') #zlib.compress(message.encode('utf-8'))
+        compressed_message = message.encode('utf-8')
+        # compressed_message = zlib.compress(message.encode('utf-8'))
         return bytearray(compressed_message)
-    
+
     async def broadcast_aprs_message(self, message):
         if not self.clients:
             print("No clients connected to send APRS messages to.")
@@ -106,14 +129,13 @@ class ChatServer:
         for client in self.clients:
             try:
                 print(f"Sending APRS message to client: {self.clients[client]}")
-                await client.send(f"APRS: {message}")
+                await client.send(message)
                 print(f"APRS message sent to {self.clients[client]}")
-            except:
+            except Exception as e:
                 print(f"Failed to send message to {self.clients[client]}: {e}")
-                clients_to_remove.append(client)
+                await clients_to_remove.append(client)
         for client in clients_to_remove:
             self.remove_client(client)
-                                                
 
     def store_message(self, timestamp, username, message):
         self.cursor.execute(f'INSERT INTO {TABLE_NAME} (timestamp, username, message) VALUES (?, ?, ?)', (timestamp, username, message))
@@ -128,8 +150,14 @@ class ChatServer:
         self.cursor.execute(f'SELECT timestamp, username, message FROM {TABLE_NAME} ORDER BY id')
         messages = self.cursor.fetchall()
         for timestamp, username, message in messages:
-            formatted_message = f'[{timestamp}] {username}: {message}\n'
-            await websocket.send(formatted_message)
+            # formatted_message = f'[{timestamp}] {username}: {message}\n'
+            # await websocket.send(formatted_message)
+            message_dict = {
+                'timestamp': timestamp,
+                'username': username,
+                'message': message
+            }
+            await websocket.send(json.dumps(message_dict))
 
     async def handle_client(self, websocket, path):
         try:
@@ -170,8 +198,7 @@ class ChatServer:
         self.aprs_app.stop()
         sys.exit(0)
 
+
 if __name__ == "__main__":
     server = ChatServer(HOST, PORT)
     asyncio.run(server.start())
-                            
-
