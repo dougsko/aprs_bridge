@@ -19,6 +19,7 @@ MAX_ROWS = 100
 APRS_SERVER_HOST = 'inovato'
 APRS_SERVER_PORT = 8000
 APRS_DEST_CALLSIGN = 'APRS'
+USE_COMPRESSION = False
 
 
 class APRSReceiveHandler(pe.ReceiveHandler):
