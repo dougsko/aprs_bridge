@@ -5,27 +5,123 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSocket Chat Client</title>
     <style>
+        body {
+            background-color: #36393f;
+            color: #dcddde;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
         #chat {
-            border: 1px solid #ccc;
-            height: 300px;
+            background-color: #2f3136;
+            color: #dcddde;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px;
+            flex-grow: 1;
             overflow-y: scroll;
+            font-size: 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+
+        #chat p {
+            margin: 0;
+            padding: 5px 0;
+            font-size: 16px;
+        }
+
+        #input-container {
+            display: flex;
+            align-items: center;
+            background-color: #40444b;
+            border-radius: 8px;
+            margin: 10px;
             padding: 10px;
         }
 
         #message {
-            width: 80%;
+            flex-grow: 1;
+            background-color: #40444b;
+            color: #dcddde;
+            border: none;
+            font-size: 16px;
+            padding: 10px;
+            border-radius: 8px;
+            outline: none;
         }
 
         #send {
-            width: 18%;
+            background-color: #7289da;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-left: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        #send:hover {
+            background-color: #677bc4;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background-color: #202225;
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background-color: #2f3136;
+        }
+
+        /* Mobile optimization */
+        @media (max-width: 600px) {
+            body {
+                font-size: 14px;
+            }
+
+            #chat {
+                padding: 10px;
+                margin: 5px;
+            }
+
+            #input-container {
+                flex-direction: column;
+                padding: 5px;
+                margin: 5px;
+            }
+
+            #message {
+                margin-bottom: 10px;
+                width: 100%;
+            }
+
+            #send {
+                width: 100%;
+                margin-left: 0;
+            }
         }
     </style>
 </head>
 
 <body>
     <div id="chat"></div>
-    <input type="text" id="message" placeholder="Type your message here..." autofocus>
-    <button id="send">Send</button>
+    <div id="input-container">
+        <input type="text" id="message" placeholder="Type your message..." autofocus>
+        <button id="send">Send</button>
+    </div>
 
     <script>
         const chat = document.getElementById('chat');
@@ -46,7 +142,7 @@
                 const username = data.username;
                 const message = data.message;
 
-                formattedMessage = `[${timestamp}] ${username}: ${message}`;
+                formattedMessage = `<strong>${username}</strong> <span style="font-size: 12px; color: #72767d;">${timestamp}</span>: ${message}`;
             } catch (e) {
                 formattedMessage = event.data;
             }
@@ -75,4 +171,5 @@
         });
     </script>
 </body>
+
 </html>
