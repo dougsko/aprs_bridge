@@ -142,7 +142,8 @@ class ChatServer:
 
     async def broadcast_aprs_message(self, message):
         if not self.clients:
-            print("No clients connected to send APRS messages to.")
+            print("No WebSocket clients connected, but continuing to send APRS messages.")
+            self.send_aprs_message(message)
             return
 
         print(f"Starting to broadcast APRS message: {message}")
@@ -201,8 +202,13 @@ class ChatServer:
 
     async def remove_client(self, websocket):
         if websocket in self.clients:
+            client_name = self.clients[websocket]
             del self.clients[websocket]
-            await websocket.close()
+            print(f"Removed client {client_name} from active connections.")
+            try:
+                await websocket.close()
+            except Exception as e:
+                print(f"Error while closing WebSocket for {client_name}: {e}")
 
     async def start(self):
         server = await websockets.serve(self.handle_client, self.host, self.port)
