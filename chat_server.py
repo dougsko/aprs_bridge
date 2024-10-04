@@ -20,6 +20,7 @@ TABLE_NAME = 'messages'
 MAX_ROWS = 100
 APRS_SERVER_HOST = 'inovato'
 APRS_SERVER_PORT = 8000
+APRS_SRC_CALLSIGN = 'K3DEP'
 APRS_DEST_CALLSIGN = 'APRS'
 USE_COMPRESSION = True
 
@@ -122,7 +123,7 @@ class ChatServer:
 
     def send_aprs_message(self, message):
         message = self.create_aprs_message(message)
-        self.aprs_app.send_unproto(0, "K3DEP", APRS_DEST_CALLSIGN, message)
+        self.aprs_app.send_unproto(0, APRS_SRC_CALLSIGN, APRS_DEST_CALLSIGN, message, ['WIDE1-1'])
 
     def create_aprs_message(self, message: str) -> bytearray:
         encoded_message = message.encode('utf-8')
