@@ -130,9 +130,19 @@
         const messageInput = document.getElementById('message');
         const sendButton = document.getElementById('send');
 
-        const socket = new WebSocket('ws://127.0.0.1:6789');
+        const socket = new WebSocket('ws://orangepizero2w:6789');
+        const welcomeBanner = `
+ _______  _______  ______    _______    _______  __   __  _______  _______ 
+|   _   ||       ||    _ |  |       |  |       ||  | |  ||   _   ||       |
+|  |_|  ||    _  ||   | ||  |  _____|  |       ||  |_|  ||  |_|  ||_     _|
+|       ||   |_| ||   |_||_ | |_____   |       ||       ||       |  |   |  
+|       ||    ___||    __  ||_____  |  |      _||       ||       |  |   |  
+|   _   ||   |    |   |  | | _____| |  |     |_ |   _   ||   _   |  |   |  
+|__| |__||___|    |___|  |_||_______|  |_______||__| |__||__| |__|  |___|  
+`
 
         socket.onopen = function (event) {
+            chat.innerHTML += `<pre>${welcomeBanner}</pre>`;
             chat.innerHTML += '<p>Connected to the server</p>';
         };
 

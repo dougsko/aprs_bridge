@@ -24,7 +24,6 @@ APRS_SRC_CALLSIGN = 'K3DEP'
 APRS_DEST_CALLSIGN = 'APRS'
 USE_COMPRESSION = True
 
-
 class APRSReceiveHandler(pe.ReceiveHandler):
     def __init__(self, irc_server):
         self.irc_server = irc_server
