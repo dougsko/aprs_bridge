@@ -13,13 +13,13 @@ import json  # Import JSON library to handle JSON encoding/decoding
 import traceback
 import base64
 
-HOST = '127.0.0.1'
+HOST = '0.0.0.0'
 PORT = 6789
 DB_NAME = 'chat_messages.db'
 TABLE_NAME = 'messages'
 MAX_ROWS = 100
-APRS_SERVER_HOST = 'inovato'
-APRS_SERVER_PORT = 8000
+APRS_SERVER_HOST = 'orangepizero2w'
+APRS_SERVER_PORT = 8002
 APRS_SRC_CALLSIGN = 'K3DEP'
 APRS_DEST_CALLSIGN = 'APRS'
 USE_COMPRESSION = True
@@ -28,7 +28,11 @@ USE_COMPRESSION = True
 class APRSReceiveHandler(pe.ReceiveHandler):
     def __init__(self, irc_server):
         self.irc_server = irc_server
-        self.loop = asyncio.get_event_loop()
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:  # If no event loop is running, create a new one
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
 
     def monitored_own(self, port, call_from, call_to, text, data):
         message = self.extract_text_from_bytearray(data)
@@ -36,17 +40,22 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
 
     def extract_text_from_bytearray(self, data: bytearray) -> str:
-        if USE_COMPRESSION:
-            try:
-                # Attempt decompression
-                print(f"Attempting to decompress message: {data}")
-                return zlib.decompress(base64.b64decode(data)).decode('utf-8')
-            except Exception:
-                # Catch any other unexpected errors and log the traceback
-                print(traceback.format_exc())
+        try:
+            if USE_COMPRESSION:
+                # Check if the data looks like base64 and try to decode it.
+                try:
+                    print(f"Attempting to decompress message: {data}")
+                    decoded_data = base64.b64decode(data)  # Decode base64 first
+                    return zlib.decompress(decoded_data).decode('utf-8')  # Then decompress
+                except (zlib.error, base64.binascii.Error):
+                    print("Data is not compressed or invalid base64, falling back to plain text.")
+                    return data.decode('utf-8', errors='ignore')
+            else:
+                # If compression is not used, just decode the data directly
                 return data.decode('utf-8', errors='ignore')
-        else:
-            # If compression is not used, just decode the data directly
+        except Exception:
+            # Catch any other unexpected errors and log the traceback
+            print(traceback.format_exc())
             return data.decode('utf-8', errors='ignore')
 
     async def handle_aprs_message(self, call_from, aprs_message):
@@ -163,8 +172,6 @@ class ChatServer:
         self.cursor.execute(f'SELECT timestamp, username, message FROM {TABLE_NAME} ORDER BY id')
         messages = self.cursor.fetchall()
         for timestamp, username, message in messages:
-            # formatted_message = f'[{timestamp}] {username}: {message}\n'
-            # await websocket.send(formatted_message)
             message_dict = {
                 'timestamp': timestamp,
                 'username': username,
