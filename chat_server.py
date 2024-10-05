@@ -141,23 +141,36 @@ class ChatServer:
         return bytearray(encoded_message)
 
     async def broadcast_aprs_message(self, message):
-        if not self.clients:
-            print("No WebSocket clients connected, but continuing to send APRS messages.")
-            self.send_aprs_message(message)
-            return
+    # Continue sending APRS messages regardless of WebSocket clients
+    if not self.clients:
+        print("No WebSocket clients connected, but continuing to send APRS messages.")
+        self.send_aprs_message(message)  # Send the message via APRS even if no WebSocket clients
+        return
 
-        print(f"Starting to broadcast APRS message: {message}")
-        clients_to_remove = []
-        for client in self.clients:
-            try:
-                print(f"Sending APRS message to client: {self.clients[client]}")
-                await client.send(message)
-                print(f"APRS message sent to {self.clients[client]}")
-            except Exception as e:
-                print(f"Failed to send message to {self.clients[client]}: {e}")
-                await clients_to_remove.append(client)
-        for client in clients_to_remove:
-            self.remove_client(client)
+    print(f"Starting to broadcast APRS message: {message}")
+    clients_to_remove = []
+    
+    # Iterate over all connected clients
+    for client in self.clients:
+        try:
+            print(f"Sending APRS message to client: {self.clients[client]}")
+            await client.send(message)  # Attempt to send the message
+            print(f"APRS message successfully sent to {self.clients[client]}")
+        except websockets.ConnectionClosed as e:
+            # Handle a client that disconnected
+            print(f"Client {self.clients[client]} disconnected (WebSocket Closed): {e}")
+            clients_to_remove.append(client)  # Mark this client for removal
+        except Exception as e:
+            # Handle other exceptions (e.g., network issues, sending errors)
+            print(f"Failed to send message to {self.clients[client]}: {e}")
+            clients_to_remove.append(client)  # Mark this client for removal
+
+    # Remove clients that have disconnected or caused an error
+    for client in clients_to_remove:
+        await self.remove_client(client)
+
+    # Ensure the APRS message is sent even if WebSocket clients had errors
+    self.send_aprs_message(message)
 
     def store_message(self, timestamp, username, message):
         self.cursor.execute(f'INSERT INTO {TABLE_NAME} (timestamp, username, message) VALUES (?, ?, ?)', (timestamp, username, message))
