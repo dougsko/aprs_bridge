@@ -146,9 +146,9 @@ class ChatServer:
                 print(f"APRS message sent to {self.clients[client]}")
             except Exception as e:
                 print(f"Failed to send message to {self.clients[client]}: {e}")
-                await clients_to_remove.append(client)
+                clients_to_remove.append(client)
         for client in clients_to_remove:
-            self.remove_client(client)
+            await self.remove_client(client)
 
     def store_message(self, timestamp, username, message):
         self.cursor.execute(f'INSERT INTO {TABLE_NAME} (timestamp, username, message) VALUES (?, ?, ?)', (timestamp, username, message))
@@ -195,8 +195,11 @@ class ChatServer:
 
     async def remove_client(self, websocket):
         if websocket in self.clients:
+            username = self.clients[websocket]
+            print(f"Removing client: {username}")
             del self.clients[websocket]
             await websocket.close()
+
 
     async def start(self):
         server = await websockets.serve(self.handle_client, self.host, self.port)
