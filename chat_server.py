@@ -55,7 +55,6 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         try:
             # Parse the message from JSON format
             aprs_data = json.loads(aprs_message)
-            print(aprs_data)
             timestamp = aprs_data.get('timestamp', datetime.now().strftime('%m/%d/%y %H:%M'))
             username = aprs_data.get('username', 'unknown')
             message = aprs_data.get('message', '')
