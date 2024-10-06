@@ -10,7 +10,6 @@ import pe
 import pe.app
 import zlib
 import json  # Import JSON library to handle JSON encoding/decoding
-import traceback
 import base64
 
 HOST = '0.0.0.0'
@@ -163,8 +162,6 @@ class ChatServer:
         self.cursor.execute(f'SELECT timestamp, username, message FROM {TABLE_NAME} ORDER BY id')
         messages = self.cursor.fetchall()
         for timestamp, username, message in messages:
-            # formatted_message = f'[{timestamp}] {username}: {message}\n'
-            # await websocket.send(formatted_message)
             message_dict = {
                 'timestamp': timestamp,
                 'username': username,
