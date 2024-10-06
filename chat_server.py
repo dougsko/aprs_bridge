@@ -13,7 +13,7 @@ import json  # Import JSON library to handle JSON encoding/decoding
 import traceback
 import base64
 
-HOST = '0.0.0.0'
+HOST = '127.0.0.1'
 PORT = 6789
 DB_NAME = 'chat_messages.db'
 TABLE_NAME = 'messages'
@@ -24,14 +24,11 @@ APRS_SRC_CALLSIGN = 'K3DEP'
 APRS_DEST_CALLSIGN = 'APRS'
 USE_COMPRESSION = True
 
+
 class APRSReceiveHandler(pe.ReceiveHandler):
     def __init__(self, irc_server):
         self.irc_server = irc_server
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:  # If no event loop is running, create a new one
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
+        self.loop = asyncio.get_event_loop()
 
     def monitored_own(self, port, call_from, call_to, text, data):
         message = self.extract_text_from_bytearray(data)
@@ -39,22 +36,17 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
 
     def extract_text_from_bytearray(self, data: bytearray) -> str:
-        try:
-            if USE_COMPRESSION:
-                # Check if the data looks like base64 and try to decode it.
-                try:
-                    print(f"Attempting to decompress message: {data}")
-                    decoded_data = base64.b64decode(data)  # Decode base64 first
-                    return zlib.decompress(decoded_data).decode('utf-8')  # Then decompress
-                except (zlib.error, base64.binascii.Error):
-                    print("Data is not compressed or invalid base64, falling back to plain text.")
-                    return data.decode('utf-8', errors='ignore')
-            else:
-                # If compression is not used, just decode the data directly
+        if USE_COMPRESSION:
+            try:
+                # Attempt decompression
+                print(f"Attempting to decompress message: {data}")
+                return zlib.decompress(base64.b64decode(data)).decode('utf-8')
+            except Exception:
+                # Catch any other unexpected errors and log the traceback
+                print(traceback.format_exc())
                 return data.decode('utf-8', errors='ignore')
-        except Exception:
-            # Catch any other unexpected errors and log the traceback
-            print(traceback.format_exc())
+        else:
+            # If compression is not used, just decode the data directly
             return data.decode('utf-8', errors='ignore')
 
     async def handle_aprs_message(self, call_from, aprs_message):
@@ -141,36 +133,22 @@ class ChatServer:
         return bytearray(encoded_message)
 
     async def broadcast_aprs_message(self, message):
-    # Continue sending APRS messages regardless of WebSocket clients
-    if not self.clients:
-        print("No WebSocket clients connected, but continuing to send APRS messages.")
-        self.send_aprs_message(message)  # Send the message via APRS even if no WebSocket clients
-        return
+        if not self.clients:
+            print("No clients connected to send APRS messages to.")
+            return
 
-    print(f"Starting to broadcast APRS message: {message}")
-    clients_to_remove = []
-    
-    # Iterate over all connected clients
-    for client in self.clients:
-        try:
-            print(f"Sending APRS message to client: {self.clients[client]}")
-            await client.send(message)  # Attempt to send the message
-            print(f"APRS message successfully sent to {self.clients[client]}")
-        except websockets.ConnectionClosed as e:
-            # Handle a client that disconnected
-            print(f"Client {self.clients[client]} disconnected (WebSocket Closed): {e}")
-            clients_to_remove.append(client)  # Mark this client for removal
-        except Exception as e:
-            # Handle other exceptions (e.g., network issues, sending errors)
-            print(f"Failed to send message to {self.clients[client]}: {e}")
-            clients_to_remove.append(client)  # Mark this client for removal
-
-    # Remove clients that have disconnected or caused an error
-    for client in clients_to_remove:
-        await self.remove_client(client)
-
-    # Ensure the APRS message is sent even if WebSocket clients had errors
-    self.send_aprs_message(message)
+        print(f"Starting to broadcast APRS message: {message}")
+        clients_to_remove = []
+        for client in self.clients:
+            try:
+                print(f"Sending APRS message to client: {self.clients[client]}")
+                await client.send(message)
+                print(f"APRS message sent to {self.clients[client]}")
+            except Exception as e:
+                print(f"Failed to send message to {self.clients[client]}: {e}")
+                await clients_to_remove.append(client)
+        for client in clients_to_remove:
+            self.remove_client(client)
 
     def store_message(self, timestamp, username, message):
         self.cursor.execute(f'INSERT INTO {TABLE_NAME} (timestamp, username, message) VALUES (?, ?, ?)', (timestamp, username, message))
@@ -185,6 +163,8 @@ class ChatServer:
         self.cursor.execute(f'SELECT timestamp, username, message FROM {TABLE_NAME} ORDER BY id')
         messages = self.cursor.fetchall()
         for timestamp, username, message in messages:
+            # formatted_message = f'[{timestamp}] {username}: {message}\n'
+            # await websocket.send(formatted_message)
             message_dict = {
                 'timestamp': timestamp,
                 'username': username,
@@ -215,13 +195,8 @@ class ChatServer:
 
     async def remove_client(self, websocket):
         if websocket in self.clients:
-            client_name = self.clients[websocket]
             del self.clients[websocket]
-            print(f"Removed client {client_name} from active connections.")
-            try:
-                await websocket.close()
-            except Exception as e:
-                print(f"Error while closing WebSocket for {client_name}: {e}")
+            await websocket.close()
 
     async def start(self):
         server = await websockets.serve(self.handle_client, self.host, self.port)
