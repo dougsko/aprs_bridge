@@ -26,9 +26,7 @@ This project is an asynchronous chat server built with Python using WebSockets. 
 
 To install the required libraries, run:
 
-pip install websockets pe
-
-> Note: The pe library is a placeholder for your APRS integration. Replace it with the actual library or module used for handling APRS communication.
+pip install websockets pyham_pe
 
 ## Configuration
 
