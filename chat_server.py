@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import asyncio
 import websockets
 import sqlite3
@@ -17,11 +18,8 @@ PORT = 6789
 DB_NAME = 'chat_messages.db'
 TABLE_NAME = 'messages'
 MAX_ROWS = 100
-APRS_SERVER_HOST = 'orangepizero2w'
-APRS_SERVER_PORT = 8002
-APRS_SRC_CALLSIGN = 'K3DEP'
-APRS_DEST_CALLSIGN = 'APRS'
-USE_COMPRESSION = True
+SRC_CALLSIGN = 'K3DEP'
+DEST_CALLSIGN = 'APRS'
 
 
 class APRSReceiveHandler(pe.ReceiveHandler):
@@ -35,25 +33,20 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
 
     def extract_text_from_bytearray(self, data: bytearray) -> str:
-        if USE_COMPRESSION:
+        if self.irc_server.use_compression:
             try:
                 # Attempt decompression
                 print(f"Attempting to decompress message: {data}")
                 return zlib.decompress(base64.b64decode(data)).decode('utf-8')
             except Exception:
-                # Catch any other unexpected errors and log the traceback
-                # print(traceback.format_exc())
                 return data.decode('utf-8', errors='ignore')
         else:
-            # If compression is not used, just decode the data directly
             return data.decode('utf-8', errors='ignore')
 
     async def handle_aprs_message(self, call_from, aprs_message):
-        # Now this function is awaited asynchronously
         print("inside handle_aprs_message")
         print(f"aprs_message is {aprs_message}")
         try:
-            # Parse the message from JSON format
             aprs_data = json.loads(aprs_message)
             timestamp = aprs_data.get('timestamp', datetime.now().strftime('%m/%d/%y %H:%M'))
             username = aprs_data.get('username', 'unknown')
@@ -74,9 +67,12 @@ class APRSReceiveHandler(pe.ReceiveHandler):
 
 
 class ChatServer:
-    def __init__(self, host, port):
+    def __init__(self, host, port, agw_server, agw_port, use_compression):
         self.host = host
         self.port = port
+        self.agw_server = agw_server
+        self.agw_port = agw_port
+        self.use_compression = use_compression
         self.clients = {}
         self.init_db()
         self.init_aprs()
@@ -99,35 +95,31 @@ class ChatServer:
     def init_aprs(self):
         self.aprs_app = pe.app.Application()
         self.aprs_app.use_custom_handler(APRSReceiveHandler(self))
-        self.aprs_app.start(APRS_SERVER_HOST, APRS_SERVER_PORT)
+        self.aprs_app.start(self.agw_server, self.agw_port)
         self.aprs_app.enable_monitoring = True
 
     async def broadcast(self, message, websocket):
         timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
         username = self.clients[websocket]
         
-        # Construct the message dictionary
         message_dict = {
             'timestamp': timestamp,
             'username': username,
             'message': message
         }
 
-        # Encode it into a JSON string
         message_json = json.dumps(message_dict)
 
-        # Send the message over APRS
         self.send_aprs_message(message_json)
 
     def send_aprs_message(self, message):
         message = self.create_aprs_message(message)
-        self.aprs_app.send_unproto(0, APRS_SRC_CALLSIGN, APRS_DEST_CALLSIGN, message, ['WIDE1-1'])
+        self.aprs_app.send_unproto(0, SRC_CALLSIGN, DEST_CALLSIGN, message, ['WIDE1-1'])
 
     def create_aprs_message(self, message: str) -> bytearray:
         encoded_message = message.encode('utf-8')
-        if USE_COMPRESSION:
+        if self.use_compression:
             return base64.b64encode(zlib.compress(encoded_message))
-            # return zlib.compress(encoded_message)
         return bytearray(encoded_message)
 
     async def broadcast_aprs_message(self, message):
@@ -196,7 +188,6 @@ class ChatServer:
             del self.clients[websocket]
             await websocket.close()
 
-
     async def start(self):
         server = await websockets.serve(self.handle_client, self.host, self.port)
         print(f"Server started on {self.host}:{self.port}")
@@ -212,5 +203,12 @@ class ChatServer:
 
 
 if __name__ == "__main__":
-    server = ChatServer(HOST, PORT)
+    parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
+    parser.add_argument('--agw-server', type=str, default='orangepizero2w', help='APRS AGW server host (default: orangepizero2w)')
+    parser.add_argument('--agw-port', type=int, default=8002, help='APRS AGW server port (default: 8002)')
+    parser.add_argument('--use-compression', type=bool, default=True, help='Enable message compression (default: True)')
+    
+    args = parser.parse_args()
+
+    server = ChatServer(HOST, PORT, args.agw_server, args.agw_port, args.use_compression)
     asyncio.run(server.start())
