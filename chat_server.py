@@ -43,7 +43,7 @@ class APRSReceiveHandler(pe.ReceiveHandler):
                 return zlib.decompress(base64.b64decode(data)).decode('utf-8')
             except Exception:
                 # Catch any other unexpected errors and log the traceback
-                print(traceback.format_exc())
+                # print(traceback.format_exc())
                 return data.decode('utf-8', errors='ignore')
         else:
             # If compression is not used, just decode the data directly
