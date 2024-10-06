@@ -10,7 +10,7 @@ from datetime import datetime
 import pe
 import pe.app
 import zlib
-import json
+import json  # Import JSON library to handle JSON encoding/decoding
 import base64
 
 HOST = '0.0.0.0'
@@ -18,7 +18,6 @@ PORT = 6789
 DB_NAME = 'chat_messages.db'
 TABLE_NAME = 'messages'
 MAX_ROWS = 100
-SRC_CALLSIGN = 'K3DEP'
 DEST_CALLSIGN = 'APRS'
 
 
@@ -35,7 +34,6 @@ class APRSReceiveHandler(pe.ReceiveHandler):
     def extract_text_from_bytearray(self, data: bytearray) -> str:
         if self.irc_server.use_compression:
             try:
-                # Attempt decompression
                 print(f"Attempting to decompress message: {data}")
                 return zlib.decompress(base64.b64decode(data)).decode('utf-8')
             except Exception:
@@ -67,11 +65,12 @@ class APRSReceiveHandler(pe.ReceiveHandler):
 
 
 class ChatServer:
-    def __init__(self, host, port, agw_server, agw_port, use_compression):
+    def __init__(self, host, port, agw_server, agw_port, src_callsign, use_compression):
         self.host = host
         self.port = port
         self.agw_server = agw_server
         self.agw_port = agw_port
+        self.src_callsign = src_callsign
         self.use_compression = use_compression
         self.clients = {}
         self.init_db()
@@ -114,7 +113,7 @@ class ChatServer:
 
     def send_aprs_message(self, message):
         message = self.create_aprs_message(message)
-        self.aprs_app.send_unproto(0, SRC_CALLSIGN, DEST_CALLSIGN, message, ['WIDE1-1'])
+        self.aprs_app.send_unproto(0, self.src_callsign, DEST_CALLSIGN, message, ['WIDE1-1'])
 
     def create_aprs_message(self, message: str) -> bytearray:
         encoded_message = message.encode('utf-8')
@@ -206,9 +205,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
     parser.add_argument('--agw-server', type=str, default='orangepizero2w', help='APRS AGW server host (default: orangepizero2w)')
     parser.add_argument('--agw-port', type=int, default=8002, help='APRS AGW server port (default: 8002)')
+    parser.add_argument('--src-callsign', type=str, default='K3DEP', help='Source callsign (default: K3DEP)')
     parser.add_argument('--use-compression', type=bool, default=True, help='Enable message compression (default: True)')
     
     args = parser.parse_args()
 
-    server = ChatServer(HOST, PORT, args.agw_server, args.agw_port, args.use_compression)
+    server = ChatServer(HOST, PORT, args.agw_server, args.agw_port, args.src_callsign, args.use_compression)
     asyncio.run(server.start())
