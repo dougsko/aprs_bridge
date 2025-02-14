@@ -37,7 +37,8 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         print(f"INSIDE MONITORED UNPROTO")
         message = self.extract_text_from_bytearray(data)
         print(f"APRS message received from {call_from}: {message}")
-        asyncio.create_task(self.handle_aprs_message(call_from, message))
+        self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
+        # asyncio.create_task(self.handle_aprs_message(call_from, message))
 
     def extract_text_from_bytearray(self, data: bytearray) -> str:
         if self.irc_server.use_compression:
