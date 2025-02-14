@@ -34,6 +34,7 @@ class APRSReceiveHandler(pe.ReceiveHandler):
     def monitored_unproto(self, port, call_from, call_to, text, data):
         #if call_to != DEST_CALLSIGN:
         #    return  # Ignore messages not directed to our destination
+        print(f"INSIDE MONITORED UNPROTO")
         message = self.extract_text_from_bytearray(data)
         print(f"APRS message received from {call_from}: {message}")
         asyncio.create_task(self.handle_aprs_message(call_from, message))
@@ -166,7 +167,7 @@ class ChatServer:
             }
             await websocket.send(json.dumps(message_dict))
 
-    async def handle_client(self, websocket, path):
+    async def handle_client(self, websocket):
         try:
             while True:
                 await websocket.send("Enter your username: ")
