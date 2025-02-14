@@ -102,8 +102,7 @@ class ChatServer:
         self.aprs_app = pe.app.Application()
         self.aprs_app.use_custom_handler(APRSReceiveHandler(self))
         self.aprs_app.start(self.agw_server, self.agw_port)
-        # self.aprs_app.enable_monitoring = True
-        self.aprs_app.enable_monitoring(True)  # Ensure monitoring is enabled
+        self.aprs_app.enable_monitoring = True
 
     async def broadcast(self, message, websocket):
         timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
