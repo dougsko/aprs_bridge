@@ -31,6 +31,13 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         print(f"APRS message received: {message}")
         self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
 
+    def monitored_unproto(self, port, call_from, call_to, text, data):
+        #if call_to != DEST_CALLSIGN:
+        #    return  # Ignore messages not directed to our destination
+        message = self.extract_text_from_bytearray(data)
+        print(f"APRS message received from {call_from}: {message}")
+        asyncio.create_task(self.handle_aprs_message(call_from, message))
+
     def extract_text_from_bytearray(self, data: bytearray) -> str:
         if self.irc_server.use_compression:
             try:
@@ -95,7 +102,8 @@ class ChatServer:
         self.aprs_app = pe.app.Application()
         self.aprs_app.use_custom_handler(APRSReceiveHandler(self))
         self.aprs_app.start(self.agw_server, self.agw_port)
-        self.aprs_app.enable_monitoring = True
+        # self.aprs_app.enable_monitoring = True
+        self.aprs_app.enable_monitoring(True)  # Ensure monitoring is enabled
 
     async def broadcast(self, message, websocket):
         timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
