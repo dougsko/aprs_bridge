@@ -2,7 +2,7 @@
 
 import argparse
 import asyncio
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
 import os
 import threading
 import websockets
@@ -23,13 +23,29 @@ DB_NAME = 'chat_messages.db'
 TABLE_NAME = 'messages'
 MAX_ROWS = 100
 DEST_CALLSIGN = 'APRS'
-WEB_DIR = os.path.dirname(os.path.abspath(__file__))  # Directory where the script is running
+WEB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_client.html")
+
+class SingleFileHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        """Serve the web_client.html file regardless of the requested path."""
+        try:
+            with open(WEB_FILE, 'rb') as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+        except FileNotFoundError:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"404 Not Found")
 
 class HTTPServerThread(threading.Thread):
     def __init__(self, port):
         super().__init__()
         self.port = port
-        self.httpd = HTTPServer(('0.0.0.0', self.port), SimpleHTTPRequestHandler)
+        self.httpd = HTTPServer(('0.0.0.0', self.port), SingleFileHTTPRequestHandler)
 
     def run(self):
         os.chdir(WEB_DIR)  # Serve files from script's directory
