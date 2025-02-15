@@ -173,10 +173,14 @@ class ChatServer:
         print("Shutting down server...")
         for client in list(self.clients.keys()):
             asyncio.create_task(client.close())
+        
         self.conn.close()
         self.aprs_app.stop()
         self.http_server_thread.stop()
-        sys.exit(0)
+        
+        loop = asyncio.get_event_loop()
+        loop.stop()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
