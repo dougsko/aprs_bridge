@@ -48,7 +48,6 @@ class HTTPServerThread(threading.Thread):
         self.httpd = HTTPServer(('0.0.0.0', self.port), SingleFileHTTPRequestHandler)
 
     def run(self):
-        os.chdir(WEB_DIR)  # Serve files from script's directory
         print(f"Serving web_client.html on port {self.port}")
         self.httpd.serve_forever()
 
@@ -56,7 +55,6 @@ class HTTPServerThread(threading.Thread):
         self.httpd.shutdown()
         self.httpd.server_close()
         print("HTTP server stopped")
-
 
 
 class APRSReceiveHandler(pe.ReceiveHandler):
