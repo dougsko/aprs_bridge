@@ -2,14 +2,14 @@
 
 import argparse
 import asyncio
-import threading
-import signal
-import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
+import threading
 import websockets
 import sqlite3
+import signal
+import sys
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import pe
 import pe.app
 import zlib
@@ -25,10 +25,8 @@ MAX_ROWS = 100
 DEST_CALLSIGN = 'APRS'
 WEB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_client.html")
 
-
 class SingleFileHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        """Serve the web_client.html file regardless of the requested path."""
         try:
             with open(WEB_FILE, 'rb') as f:
                 content = f.read()
@@ -42,10 +40,9 @@ class SingleFileHTTPRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"404 Not Found")
 
-
 class HTTPServerThread(threading.Thread):
     def __init__(self, port):
-        super().__init__(daemon=True)
+        super().__init__()
         self.port = port
         self.httpd = HTTPServer(('0.0.0.0', self.port), SingleFileHTTPRequestHandler)
 
@@ -58,6 +55,42 @@ class HTTPServerThread(threading.Thread):
         self.httpd.server_close()
         print("HTTP server stopped")
 
+class APRSReceiveHandler(pe.ReceiveHandler):
+    def __init__(self, irc_server):
+        self.irc_server = irc_server
+        self.loop = asyncio.get_event_loop()
+
+    def monitored_own(self, port, call_from, call_to, text, data):
+        message = self.extract_text_from_bytearray(data)
+        self.loop.create_task(self.handle_aprs_message(call_from, message))
+
+    def monitored_unproto(self, port, call_from, call_to, text, data):
+        message = self.extract_text_from_bytearray(data)
+        self.loop.create_task(self.handle_aprs_message(call_from, message))
+
+    def extract_text_from_bytearray(self, data: bytearray) -> str:
+        if self.irc_server.use_compression:
+            try:
+                return zlib.decompress(base64.b64decode(data)).decode('utf-8')
+            except Exception:
+                return data.decode('utf-8', errors='ignore')
+        else:
+            return data.decode('utf-8', errors='ignore')
+
+    async def handle_aprs_message(self, call_from, aprs_message):
+        try:
+            aprs_data = json.loads(aprs_message)
+            timestamp = aprs_data.get('timestamp', datetime.now().strftime('%m/%d/%y %H:%M'))
+            username = aprs_data.get('username', 'unknown')
+            message = aprs_data.get('message', '')
+        except json.JSONDecodeError:
+            timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
+            username = call_from
+            message = aprs_message
+
+        message_dict = {'timestamp': timestamp, 'username': username, 'message': message}
+        self.irc_server.store_message(timestamp, username, message)
+        await self.irc_server.broadcast_aprs_message(json.dumps(message_dict))
 
 class ChatServer:
     def __init__(self, host, port, agw_server, agw_port, src_callsign, use_compression):
@@ -74,7 +107,6 @@ class ChatServer:
         self.init_aprs()
         signal.signal(signal.SIGINT, self.cleanup)
         signal.signal(signal.SIGTERM, self.cleanup)
-        self.server = None  # Placeholder for the WebSocket server
 
     def init_db(self):
         self.conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -91,48 +123,69 @@ class ChatServer:
 
     def init_aprs(self):
         self.aprs_app = pe.app.Application()
+        self.aprs_app.use_custom_handler(APRSReceiveHandler(self))
         self.aprs_app.start(self.agw_server, self.agw_port)
         self.aprs_app.enable_monitoring = True
+
+    async def handle_client(self, websocket):
+        try:
+            await websocket.send("Enter your username: ")
+            username = await websocket.recv()
+            username = username.strip()
+            self.clients[websocket] = username
+            await websocket.send(f"Welcome, {username}!")
+            await self.send_all_messages(websocket)
+            async for message in websocket:
+                await self.broadcast(message, websocket)
+        except websockets.ConnectionClosed:
+            await self.remove_client(websocket)
+
+    async def broadcast(self, message, websocket):
+        timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
+        username = self.clients.get(websocket, "unknown")
+        message_dict = {'timestamp': timestamp, 'username': username, 'message': message}
+        await self.broadcast_aprs_message(json.dumps(message_dict))
+
+    async def broadcast_aprs_message(self, message):
+        for client in list(self.clients.keys()):
+            try:
+                await client.send(message)
+            except Exception:
+                await self.remove_client(client)
+
+    async def send_all_messages(self, websocket):
+        self.cursor.execute(f'SELECT timestamp, username, message FROM {TABLE_NAME} ORDER BY id')
+        messages = self.cursor.fetchall()
+        for timestamp, username, message in messages:
+            await websocket.send(json.dumps({'timestamp': timestamp, 'username': username, 'message': message}))
+
+    async def remove_client(self, websocket):
+        if websocket in self.clients:
+            del self.clients[websocket]
+        await websocket.close()
 
     async def start(self):
         self.server = await websockets.serve(self.handle_client, self.host, self.port)
         print(f"Server started on {self.host}:{self.port}")
         await self.server.wait_closed()
 
-    def cleanup(self, signum=None, frame=None):
+    def cleanup(self, signum, frame):
         print("Shutting down server...")
-        if self.server:
-            asyncio.create_task(self.shutdown())
-
-    async def shutdown(self):
         for client in list(self.clients.keys()):
-            await client.close()
+            asyncio.create_task(client.close())
         self.conn.close()
         self.aprs_app.stop()
         self.http_server_thread.stop()
-        if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-        print("Server shutdown complete.")
         sys.exit(0)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
-    parser.add_argument('--agw-server', type=str, default='orangepizero2w', help='APRS AGW server host (default: orangepizero2w)')
-    parser.add_argument('--agw-port', type=int, default=8002, help='APRS AGW server port (default: 8002)')
-    parser.add_argument('--src-callsign', type=str, default='K3DEP', help='Source callsign (default: K3DEP)')
-    parser.add_argument('--use-compression', type=bool, default=True, help='Enable message compression (default: True)')
-
+    parser.add_argument('--agw-server', type=str, default='orangepizero2w', help='APRS AGW server host')
+    parser.add_argument('--agw-port', type=int, default=8002, help='APRS AGW server port')
+    parser.add_argument('--src-callsign', type=str, default='K3DEP', help='Source callsign')
+    parser.add_argument('--use-compression', type=bool, default=True, help='Enable message compression')
+    
     args = parser.parse_args()
+
     server = ChatServer(HOST, PORT, args.agw_server, args.agw_port, args.src_callsign, args.use_compression)
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    try:
-        loop.run_until_complete(server.start())
-    except KeyboardInterrupt:
-        loop.run_until_complete(server.shutdown())
-    finally:
-        loop.close()
+    asyncio.run(server.start())
