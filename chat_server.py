@@ -2,6 +2,8 @@
 
 import argparse
 import asyncio
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+import os
 import websockets
 import sqlite3
 import signal
@@ -15,10 +17,29 @@ import base64
 
 HOST = '0.0.0.0'
 PORT = 6789
+HTTP_PORT = 8080
 DB_NAME = 'chat_messages.db'
 TABLE_NAME = 'messages'
 MAX_ROWS = 100
 DEST_CALLSIGN = 'APRS'
+WEB_DIR = os.path.dirname(os.path.abspath(__file__))  # Directory where the script is running
+
+class HTTPServerThread(threading.Thread):
+    def __init__(self, port):
+        super().__init__()
+        self.port = port
+        self.httpd = HTTPServer(('0.0.0.0', self.port), SimpleHTTPRequestHandler)
+
+    def run(self):
+        os.chdir(WEB_DIR)  # Serve files from script's directory
+        print(f"Serving web_client.html on port {self.port}")
+        self.httpd.serve_forever()
+
+    def stop(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        print("HTTP server stopped")
+
 
 
 class APRSReceiveHandler(pe.ReceiveHandler):
@@ -32,13 +53,10 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
 
     def monitored_unproto(self, port, call_from, call_to, text, data):
-        #if call_to != DEST_CALLSIGN:
-        #    return  # Ignore messages not directed to our destination
         print(f"INSIDE MONITORED UNPROTO")
         message = self.extract_text_from_bytearray(data)
         print(f"APRS message received from {call_from}: {message}")
         self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
-        # asyncio.create_task(self.handle_aprs_message(call_from, message))
 
     def extract_text_from_bytearray(self, data: bytearray) -> str:
         if self.irc_server.use_compression:
@@ -207,6 +225,7 @@ class ChatServer:
             asyncio.create_task(client.close())
         self.conn.close()
         self.aprs_app.stop()
+        self.http_server_thread.stop()
         sys.exit(0)
 
 
