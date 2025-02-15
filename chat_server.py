@@ -171,15 +171,17 @@ class ChatServer:
 
     def cleanup(self, signum, frame):
         print("Shutting down server...")
+        
         for client in list(self.clients.keys()):
             asyncio.create_task(client.close())
-        
+
         self.conn.close()
         self.aprs_app.stop()
         self.http_server_thread.stop()
         
-        loop = asyncio.get_event_loop()
-        loop.stop()
+        loop = asyncio.get_running_loop()
+        loop.call_soon_threadsafe(loop.stop)
+
 
 
 if __name__ == "__main__":
@@ -192,4 +194,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     server = ChatServer(HOST, PORT, args.agw_server, args.agw_port, args.src_callsign, args.use_compression)
-    asyncio.run(server.start())
+    try:
+        asyncio.run(server.start())
+    except KeyboardInterrupt:
+        server.cleanup(None, None)
