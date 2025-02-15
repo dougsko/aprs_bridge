@@ -101,6 +101,8 @@ class ChatServer:
         self.src_callsign = src_callsign
         self.use_compression = use_compression
         self.clients = {}
+        self.http_server_thread = HTTPServerThread(HTTP_PORT)
+        self.http_server_thread.start()
         self.init_db()
         self.init_aprs()
         signal.signal(signal.SIGINT, self.cleanup)
