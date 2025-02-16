@@ -14,7 +14,7 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
-            overflow: hidden; /* Prevent body from scrolling */
+            overflow: hidden;
         }
 
         #chat {
@@ -24,18 +24,18 @@
             padding: 15px;
             margin: 10px;
             flex-grow: 1;
-            overflow-y: auto; /* Enable scrolling */
+            overflow-y: auto;
             font-size: 14px;
             display: flex;
             flex-direction: column;
-            justify-content: flex-start; /* Align messages to the top */
+            justify-content: flex-start;
         }
 
         #chat p {
             margin: 0;
             padding: 5px 0;
             font-size: 16px;
-            word-wrap: break-word; /* Prevent long words from overflowing */
+            word-wrap: break-word;
         }
 
         #input-container {
@@ -74,7 +74,6 @@
             background-color: #677bc4;
         }
 
-        /* Scrollbar styling */
         ::-webkit-scrollbar {
             width: 10px;
         }
@@ -88,7 +87,6 @@
             background-color: #2f3136;
         }
 
-        /* Mobile optimization */
         @media (max-width: 600px) {
             body {
                 font-size: 14px;
@@ -129,9 +127,23 @@
         const chat = document.getElementById('chat');
         const messageInput = document.getElementById('message');
         const sendButton = document.getElementById('send');
+        
+        async function getWebSocketConfig() {
+            try {
+                const response = await fetch('/config');
+                const config = await response.json();
+                return `ws://${config.host}:${config.port}`;
+            } catch (error) {
+                console.error('Failed to load config, using default:', error);
+                return 'ws://localhost:6789';
+            }
+        }
 
-        const socket = new WebSocket('ws://inovato:6789');
-        const welcomeBanner = `
+        async function initializeWebSocket() {
+            const wsUrl = await getWebSocketConfig();
+            const socket = new WebSocket(wsUrl);
+            
+            const welcomeBanner = `
  _______  _______  ______    _______    _______  __   __  _______  _______ 
 |   _   ||       ||    _ |  |       |  |       ||  | |  ||   _   ||       |
 |  |_|  ||    _  ||   | ||  |  _____|  |       ||  |_|  ||  |_|  ||_     _|
@@ -139,48 +151,51 @@
 |       ||    ___||    __  ||_____  |  |      _||       ||       |  |   |  
 |   _   ||   |    |   |  | | _____| |  |     |_ |   _   ||   _   |  |   |  
 |__| |__||___|    |___|  |_||_______|  |_______||__| |__||__| |__|  |___|  
-`
+`;
 
-        socket.onopen = function (event) {
-            chat.innerHTML += `<pre>${welcomeBanner}</pre>`;
-            chat.innerHTML += '<p>Connected to the server</p>';
-        };
+            socket.onopen = function (event) {
+                chat.innerHTML += `<pre>${welcomeBanner}</pre>`;
+                chat.innerHTML += '<p>Connected to the server</p>';
+            };
 
-        socket.onmessage = function (event) {
-            let formattedMessage;
-            try {
-                const data = JSON.parse(event.data);
-                const timestamp = data.timestamp;
-                const username = data.username;
-                const message = data.message;
+            socket.onmessage = function (event) {
+                let formattedMessage;
+                try {
+                    const data = JSON.parse(event.data);
+                    const timestamp = data.timestamp;
+                    const username = data.username;
+                    const message = data.message;
 
-                formattedMessage = `<strong>${username}</strong> <span style="font-size: 12px; color: #72767d;">${timestamp}</span>: ${message}`;
-            } catch (e) {
-                formattedMessage = event.data;
-            }
+                    formattedMessage = `<strong>${username}</strong> <span style="font-size: 12px; color: #72767d;">${timestamp}</span>: ${message}`;
+                } catch (e) {
+                    formattedMessage = event.data;
+                }
 
-            chat.innerHTML += '<p>' + formattedMessage + '</p>';
-            chat.scrollTop = chat.scrollHeight; // Auto-scroll to the bottom of the chat
-        };
+                chat.innerHTML += '<p>' + formattedMessage + '</p>';
+                chat.scrollTop = chat.scrollHeight;
+            };
 
-        socket.onclose = function () {
-            chat.innerHTML += '<p>Disconnected from the server</p>';
-            chat.scrollTop = chat.scrollHeight;
-        };
+            socket.onclose = function () {
+                chat.innerHTML += '<p>Disconnected from the server</p>';
+                chat.scrollTop = chat.scrollHeight;
+            };
 
-        sendButton.onclick = function () {
-            const message = messageInput.value;
-            if (message) {
-                socket.send(message);
-                messageInput.value = '';
-            }
-        };
+            sendButton.onclick = function () {
+                const message = messageInput.value;
+                if (message) {
+                    socket.send(message);
+                    messageInput.value = '';
+                }
+            };
 
-        messageInput.addEventListener('keypress', function (event) {
-            if (event.key === 'Enter') {
-                sendButton.click();
-            }
-        });
+            messageInput.addEventListener('keypress', function (event) {
+                if (event.key === 'Enter') {
+                    sendButton.click();
+                }
+            });
+        }
+
+        initializeWebSocket();
     </script>
 </body>
 

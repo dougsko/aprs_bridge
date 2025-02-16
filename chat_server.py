@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import asyncio
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
@@ -25,15 +24,15 @@ def load_config():
     if not os.path.exists(CONFIG_FILE):
         config['DEFAULT'] = {
             'SRC_CALLSIGN': 'N0CALL',
-            'HOST': '0.0.0.0',
-            'PORT': '6789',
+            'DEST_CALLSIGN': 'APRS',
+            'WEBSOCKET_HOST': '0.0.0.0',
+            'WEBSOCKET_PORT': '6789',
             'HTTP_PORT': '8080',
             'AGW_SERVER': socket.gethostname(),
             'AGW_PORT': '8000',
             'DB_NAME': 'chat_messages.db',
             'TABLE_NAME': 'messages',
             'MAX_ROWS': '100',
-            'DEST_CALLSIGN': 'APRS',
             'WEB_CLIENT_NAME': 'web_client.html',
             'USE_COMPRESSION': 'true'
         }
@@ -46,8 +45,8 @@ def load_config():
 
 config = load_config()
 SRC_CALLSIGN = config.get('SRC_CALLSIGN', 'N0CALL')
-HOST = config.get('HOST', '0.0.0.0')
-PORT = int(config.get('PORT', 6789))
+WEBSOCKET_HOST = config.get('WEBSOCKET_HOST', '0.0.0.0')
+WEBSOCKET_PORT = int(config.get('WEBSOCKET_PORT', 6789))
 HTTP_PORT = int(config.get('HTTP_PORT', 8080))
 AGW_SERVER = config.get('AGW_SERVER', socket.gethostname())
 AGW_PORT = int(config.get('AGW_PORT', 8000))
@@ -61,8 +60,16 @@ WEB_CLIENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), WEB_CLIENT
 
 class SingleFileHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/config":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            config_data = json.dumps({"host": WEBSOCKET_HOST, "port": WEBSOCKET_PORT})
+            self.wfile.write(config_data.encode())
+            return
+        
         try:
-            with open(WEB_FILE, 'rb') as f:
+            with open(WEB_CLIENT, 'rb') as f:
                 content = f.read()
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -73,6 +80,7 @@ class SingleFileHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             self.wfile.write(b"404 Not Found")
+
 
 class HTTPServerThread(threading.Thread):
     def __init__(self, port):
@@ -223,7 +231,7 @@ class ChatServer:
         sys.exit(0)
 
 if __name__ == "__main__":
-    server = ChatServer(HOST, PORT, AGW_SERVER, AGW_PORT, SRC_CALLSIGN, USE_COMPRESSION)
+    server = ChatServer(WEBSOCKET_HOST, WEBSOCKET_PORT, AGW_SERVER, AGW_PORT, SRC_CALLSIGN, USE_COMPRESSION)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
