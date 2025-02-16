@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-import argparse
 import asyncio
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 import socket
+import threading
 import websockets
 import sqlite3
 import signal
@@ -61,14 +62,6 @@ WEB_CLIENT_NAME = config.get('WEB_CLIENT_NAME', 'web_client.html')
 USE_COMPRESSION = bool(config.get('USE_COMPRESSION', 'TRUE'))
 WEB_CLIENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), WEB_CLIENT_NAME)
 
-HOST = '0.0.0.0'
-PORT = 6789
-DB_NAME = 'chat_messages.db'
-TABLE_NAME = 'messages'
-MAX_ROWS = 100
-DEST_CALLSIGN = 'APRS'
-
-
 class APRSReceiveHandler(pe.ReceiveHandler):
     def __init__(self, irc_server):
         self.irc_server = irc_server
@@ -80,13 +73,10 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
 
     def monitored_unproto(self, port, call_from, call_to, text, data):
-        #if call_to != DEST_CALLSIGN:
-        #    return  # Ignore messages not directed to our destination
         print(f"INSIDE MONITORED UNPROTO")
         message = self.extract_text_from_bytearray(data)
         print(f"APRS message received from {call_from}: {message}")
         self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
-        # asyncio.create_task(self.handle_aprs_message(call_from, message))
 
     def extract_text_from_bytearray(self, data: bytearray) -> str:
         if self.irc_server.use_compression:
@@ -153,6 +143,7 @@ class ChatServer:
         self.aprs_app.use_custom_handler(APRSReceiveHandler(self))
         self.aprs_app.start(self.agw_server, self.agw_port)
         self.aprs_app.enable_monitoring = True
+        print(f"Connected to AGW server at {self.agw_server}:{self.agw_port}")
 
     async def broadcast(self, message, websocket):
         timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
@@ -246,19 +237,45 @@ class ChatServer:
 
     async def start(self):
         server = await websockets.serve(self.handle_client, self.host, self.port)
-        print(f"Server started on {self.host}:{self.port}")
+        print(f"Websocket server started on {self.host}:{self.port}")
         await server.wait_closed()
 
     def cleanup(self, signum, frame):
-        print(f"Shutting down server...")
+        print(f"Shutting down websocket server..")
         for client in self.clients:
             asyncio.create_task(client.close())
         self.conn.close()
         self.aprs_app.stop()
         sys.exit(0)
 
+# HTTP Server for serving web_client.html
+class SingleFileHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/" or self.path == f"/{WEB_CLIENT_NAME}":
+            try:
+                with open(WEB_CLIENT, "rb") as f:
+                    self.send_response(200)
+                    self.send_header("Content-type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(f.read())
+            except FileNotFoundError:
+                self.send_error(404, "File Not Found")
+        else:
+            self.send_error(403, "Forbidden")
+
+def start_http_server():
+    server_address = ("", HTTP_PORT)
+    httpd = ThreadingHTTPServer(server_address, SingleFileHandler)
+    print(f"HTTP server started on port {HTTP_PORT}, serving {WEB_CLIENT_NAME}")
+    httpd.serve_forever()        
+
 
 if __name__ == "__main__":
-    server = ChatServer(HOST, PORT, AGW_SERVER, AGW_PORT, SRC_CALLSIGN, USE_COMPRESSION)
+    server = ChatServer(WEBSOCKET_LISTEN_ADDRESS, WEBSOCKET_PORT, AGW_SERVER, AGW_PORT, SRC_CALLSIGN, USE_COMPRESSION)
+    
+    # Start HTTP server in a separate thread
+    http_thread = threading.Thread(target=start_http_server, daemon=True)
+    http_thread.start()
+    
     asyncio.run(server.start())
 
