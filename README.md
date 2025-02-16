@@ -1,4 +1,4 @@
-# Chat Server
+# APRS Chat Server
 
 This project is a chat server that facilitates real-time communication via WebSockets and APRS (Automatic Packet Reporting System). It includes an HTTP server to serve a web-based chat client (`web_client.html`).
 
