@@ -266,7 +266,7 @@ class SingleFileHandler(BaseHTTPRequestHandler):
 def start_http_server():
     server_address = ("", HTTP_PORT)
     httpd = ThreadingHTTPServer(server_address, SingleFileHandler)
-    print(f"HTTP server started on port {HTTP_PORT}, serving {WEB_CLIENT_NAME}")
+    print(f"HTTP server started on port {HTTP_PORT}")
     httpd.serve_forever()        
 
 
