@@ -48,7 +48,7 @@ def load_config():
 config = load_config()
 SRC_CALLSIGN = config.get('SRC_CALLSIGN', 'N0CALL')
 DEST_CALLSIGN = config.get('DEST_CALLSIGN', 'APRS')
-HOSTNAME = config.get('HOSTNAME', HOSTNAME)
+HOSTNAME = config.get('HOSTNAME')
 WEBSOCKET_LISTEN_ADDRESS = config.get('WEBSOCKET_LISTEN_ADDRESS', '0.0.0.0')
 WEBSOCKET_PORT = int(config.get('WEBSOCKET_PORT', 6789))
 HTTP_PORT = int(config.get('HTTP_PORT', 8080))
