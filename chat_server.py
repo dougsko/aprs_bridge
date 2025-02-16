@@ -2,6 +2,8 @@
 
 import argparse
 import asyncio
+import os
+import socket
 import websockets
 import sqlite3
 import signal
@@ -12,6 +14,52 @@ import pe.app
 import zlib
 import json
 import base64
+import configparser
+
+CONFIG_FILE = 'chat_server.conf'
+HOSTNAME = socket.gethostname()
+
+def load_config():
+    config = configparser.ConfigParser()
+    if not os.path.exists(CONFIG_FILE):
+        config['DEFAULT'] = {
+            'SRC_CALLSIGN': 'N0CALL',
+            'DEST_CALLSIGN': 'APRS',
+            'HOSTNAME': HOSTNAME,
+            'WEBSOCKET_HOST': '0.0.0.0',
+            'WEBSOCKET_PORT': '6789',
+            'HTTP_PORT': '8080',
+            'AGW_SERVER': HOSTNAME,
+            'AGW_PORT': '8000',
+            'DB_NAME': 'chat_messages.db',
+            'TABLE_NAME': 'messages',
+            'MAX_ROWS': '100',
+            'WEB_CLIENT_NAME': 'web_client.html',
+            'USE_COMPRESSION': 'true'
+        }
+        with open(CONFIG_FILE, 'w') as configfile:
+            config.write(configfile)
+        print(f"Config file '{CONFIG_FILE}' created. Please edit it before running the server.")
+        sys.exit(1)
+    config.read(CONFIG_FILE)
+    return config['DEFAULT']
+
+config = load_config()
+SRC_CALLSIGN = config.get('SRC_CALLSIGN', 'N0CALL')
+DEST_CALLSIGN = config.get('DEST_CALLSIGN', 'APRS')
+HOSTNAME = config.get('HOSTNAME')
+WEBSOCKET_LISTEN_ADDRESS = config.get('WEBSOCKET_LISTEN_ADDRESS', '0.0.0.0')
+WEBSOCKET_PORT = int(config.get('WEBSOCKET_PORT', 6789))
+HTTP_PORT = int(config.get('HTTP_PORT', 8080))
+AGW_SERVER = config.get('AGW_SERVER', HOSTNAME)
+AGW_PORT = int(config.get('AGW_PORT', 8000))
+DB_NAME = config.get('DB_NAME', 'chat_messages.db')
+TABLE_NAME = config.get('TABLE_NAME', 'messages')
+MAX_ROWS = int(config.get('MAX_ROWS', 100))
+DEST_CALLSIGN = config.get('DEST_CALLSIGN', 'APRS')
+WEB_CLIENT_NAME = config.get('WEB_CLIENT_NAME', 'web_client.html')
+USE_COMPRESSION = bool(config.get('USE_COMPRESSION', 'TRUE'))
+WEB_CLIENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), WEB_CLIENT_NAME)
 
 HOST = '0.0.0.0'
 PORT = 6789
@@ -211,13 +259,6 @@ class ChatServer:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
-    parser.add_argument('--agw-server', type=str, default='orangepizero2w', help='APRS AGW server host (default: orangepizero2w)')
-    parser.add_argument('--agw-port', type=int, default=8002, help='APRS AGW server port (default: 8002)')
-    parser.add_argument('--src-callsign', type=str, default='K3DEP', help='Source callsign (default: K3DEP)')
-    parser.add_argument('--use-compression', type=bool, default=True, help='Enable message compression (default: True)')
-    
-    args = parser.parse_args()
-
-    server = ChatServer(HOST, PORT, args.agw_server, args.agw_port, args.src_callsign, args.use_compression)
+    server = ChatServer(HOST, PORT, AGW_SERVER, AGW_PORT, SRC_CALLSIGN, USE_COMPRESSION)
     asyncio.run(server.start())
+
