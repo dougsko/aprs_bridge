@@ -130,7 +130,7 @@
         
         async function getWebSocketConfig() {
             try {
-                const response = await fetch(':8080/config');
+                const response = await fetch('http://localhost:8080/config');
                 const config = await response.json();
                 return `ws://${config.host}:${config.port}`;
             } catch (error) {
