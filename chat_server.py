@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 
+import argparse
 import asyncio
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import os
-import socket
-import threading
 import websockets
 import sqlite3
 import signal
@@ -15,91 +12,14 @@ import pe.app
 import zlib
 import json
 import base64
-import configparser
 
-CONFIG_FILE = 'chat_server.conf'
-HOSTNAME = socket.gethostname()
+HOST = '0.0.0.0'
+PORT = 6789
+DB_NAME = 'chat_messages.db'
+TABLE_NAME = 'messages'
+MAX_ROWS = 100
+DEST_CALLSIGN = 'APRS'
 
-def load_config():
-    config = configparser.ConfigParser()
-    if not os.path.exists(CONFIG_FILE):
-        config['DEFAULT'] = {
-            'SRC_CALLSIGN': 'N0CALL',
-            'DEST_CALLSIGN': 'APRS',
-            'HOSTNAME': HOSTNAME,
-            'WEBSOCKET_HOST': '0.0.0.0',
-            'WEBSOCKET_PORT': '6789',
-            'HTTP_PORT': '8080',
-            'AGW_SERVER': HOSTNAME,
-            'AGW_PORT': '8000',
-            'DB_NAME': 'chat_messages.db',
-            'TABLE_NAME': 'messages',
-            'MAX_ROWS': '100',
-            'WEB_CLIENT_NAME': 'web_client.html',
-            'USE_COMPRESSION': 'true'
-        }
-        with open(CONFIG_FILE, 'w') as configfile:
-            config.write(configfile)
-        print(f"Config file '{CONFIG_FILE}' created. Please edit it before running the server.")
-        sys.exit(1)
-    config.read(CONFIG_FILE)
-    return config['DEFAULT']
-
-config = load_config()
-SRC_CALLSIGN = config.get('SRC_CALLSIGN', 'N0CALL')
-DEST_CALLSIGN = config.get('DEST_CALLSIGN', 'APRS')
-HOSTNAME = config.get('HOSTNAME')
-WEBSOCKET_LISTEN_ADDRESS = config.get('WEBSOCKET_LISTEN_ADDRESS', '0.0.0.0')
-WEBSOCKET_PORT = int(config.get('WEBSOCKET_PORT', 6789))
-HTTP_PORT = int(config.get('HTTP_PORT', 8080))
-AGW_SERVER = config.get('AGW_SERVER', HOSTNAME)
-AGW_PORT = int(config.get('AGW_PORT', 8000))
-DB_NAME = config.get('DB_NAME', 'chat_messages.db')
-TABLE_NAME = config.get('TABLE_NAME', 'messages')
-MAX_ROWS = int(config.get('MAX_ROWS', 100))
-DEST_CALLSIGN = config.get('DEST_CALLSIGN', 'APRS')
-WEB_CLIENT_NAME = config.get('WEB_CLIENT_NAME', 'web_client.html')
-USE_COMPRESSION = bool(config.get('USE_COMPRESSION', 'TRUE'))
-WEB_CLIENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), WEB_CLIENT_NAME)
-
-class SingleFileHTTPRequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/config":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            config_data = json.dumps({"host": AGW_SERVER, "port": WEBSOCKET_PORT})
-            self.wfile.write(config_data.encode())
-            return
-        
-        try:
-            with open(WEB_CLIENT, 'rb') as f:
-                content = f.read()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html")
-            self.send_header("Content-Length", str(len(content)))
-            self.end_headers()
-            self.wfile.write(content)
-        except FileNotFoundError:
-            self.send_response(404)
-            self.end_headers()
-            self.wfile.write(b"404 Not Found")
-
-
-class HTTPServerThread(threading.Thread):
-    def __init__(self, port):
-        super().__init__()
-        self.port = port
-        self.httpd = HTTPServer(('0.0.0.0', self.port), SingleFileHTTPRequestHandler)
-
-    def run(self):
-        print(f"Serving web_client.html on port {self.port}")
-        self.httpd.serve_forever()
-
-    def stop(self):
-        self.httpd.shutdown()
-        self.httpd.server_close()
-        print("HTTP server stopped")
 
 class APRSReceiveHandler(pe.ReceiveHandler):
     def __init__(self, irc_server):
@@ -108,15 +28,22 @@ class APRSReceiveHandler(pe.ReceiveHandler):
 
     def monitored_own(self, port, call_from, call_to, text, data):
         message = self.extract_text_from_bytearray(data)
-        self.loop.create_task(self.handle_aprs_message(call_from, message))
+        print(f"APRS message received: {message}")
+        self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
 
     def monitored_unproto(self, port, call_from, call_to, text, data):
+        #if call_to != DEST_CALLSIGN:
+        #    return  # Ignore messages not directed to our destination
+        print(f"INSIDE MONITORED UNPROTO")
         message = self.extract_text_from_bytearray(data)
-        self.loop.create_task(self.handle_aprs_message(call_from, message))
+        print(f"APRS message received from {call_from}: {message}")
+        self.loop.run_until_complete(self.handle_aprs_message(call_from, message))
+        # asyncio.create_task(self.handle_aprs_message(call_from, message))
 
     def extract_text_from_bytearray(self, data: bytearray) -> str:
         if self.irc_server.use_compression:
             try:
+                print(f"Attempting to decompress message: {data}")
                 return zlib.decompress(base64.b64decode(data)).decode('utf-8')
             except Exception:
                 return data.decode('utf-8', errors='ignore')
@@ -124,19 +51,27 @@ class APRSReceiveHandler(pe.ReceiveHandler):
             return data.decode('utf-8', errors='ignore')
 
     async def handle_aprs_message(self, call_from, aprs_message):
+        print("inside handle_aprs_message")
+        print(f"aprs_message is {aprs_message}")
         try:
             aprs_data = json.loads(aprs_message)
             timestamp = aprs_data.get('timestamp', datetime.now().strftime('%m/%d/%y %H:%M'))
             username = aprs_data.get('username', 'unknown')
             message = aprs_data.get('message', '')
         except json.JSONDecodeError:
+            print("Error decoding APRS message JSON")
             timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
             username = call_from
             message = aprs_message
 
-        message_dict = {'timestamp': timestamp, 'username': username, 'message': message}
+        message_dict = {
+            'timestamp': timestamp,
+            'username': username,
+            'message': message
+        }
         self.irc_server.store_message(timestamp, username, message)
         await self.irc_server.broadcast_aprs_message(json.dumps(message_dict))
+
 
 class ChatServer:
     def __init__(self, host, port, agw_server, agw_port, src_callsign, use_compression):
@@ -147,8 +82,6 @@ class ChatServer:
         self.src_callsign = src_callsign
         self.use_compression = use_compression
         self.clients = {}
-        self.http_server_thread = HTTPServerThread(HTTP_PORT)
-        self.http_server_thread.start()
         self.init_db()
         self.init_aprs()
         signal.signal(signal.SIGINT, self.cleanup)
@@ -173,11 +106,78 @@ class ChatServer:
         self.aprs_app.start(self.agw_server, self.agw_port)
         self.aprs_app.enable_monitoring = True
 
+    async def broadcast(self, message, websocket):
+        timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
+        username = self.clients[websocket]
+        
+        message_dict = {
+            'timestamp': timestamp,
+            'username': username,
+            'message': message
+        }
+
+        message_json = json.dumps(message_dict)
+
+        self.send_aprs_message(message_json)
+
+    def send_aprs_message(self, message):
+        message = self.create_aprs_message(message)
+        self.aprs_app.send_unproto(0, self.src_callsign, DEST_CALLSIGN, message, ['WIDE1-1'])
+
+    def create_aprs_message(self, message: str) -> bytearray:
+        encoded_message = message.encode('utf-8')
+        if self.use_compression:
+            return base64.b64encode(zlib.compress(encoded_message))
+        return bytearray(encoded_message)
+
+    async def broadcast_aprs_message(self, message):
+        if not self.clients:
+            print("No clients connected to send APRS messages to.")
+            return
+
+        print(f"Starting to broadcast APRS message: {message}")
+        clients_to_remove = []
+        for client in self.clients:
+            try:
+                print(f"Sending APRS message to client: {self.clients[client]}")
+                await client.send(message)
+                print(f"APRS message sent to {self.clients[client]}")
+            except Exception as e:
+                print(f"Failed to send message to {self.clients[client]}: {e}")
+                clients_to_remove.append(client)
+        for client in clients_to_remove:
+            await self.remove_client(client)
+
+    def store_message(self, timestamp, username, message):
+        self.cursor.execute(f'INSERT INTO {TABLE_NAME} (timestamp, username, message) VALUES (?, ?, ?)', (timestamp, username, message))
+        self.conn.commit()
+        self.cursor.execute(f'SELECT COUNT(*) FROM {TABLE_NAME}')
+        count = self.cursor.fetchone()[0]
+        if count > MAX_ROWS:
+            self.cursor.execute(f'DELETE FROM {TABLE_NAME} WHERE id IN (SELECT id FROM {TABLE_NAME} ORDER BY id LIMIT ?)', (count - MAX_ROWS,))
+            self.conn.commit()
+
+    async def send_all_messages(self, websocket):
+        self.cursor.execute(f'SELECT timestamp, username, message FROM {TABLE_NAME} ORDER BY id')
+        messages = self.cursor.fetchall()
+        for timestamp, username, message in messages:
+            message_dict = {
+                'timestamp': timestamp,
+                'username': username,
+                'message': message
+            }
+            await websocket.send(json.dumps(message_dict))
+
     async def handle_client(self, websocket):
         try:
-            await websocket.send("Enter your username: ")
-            username = await websocket.recv()
-            username = username.strip()
+            while True:
+                await websocket.send("Enter your username: ")
+                username = await websocket.recv()
+                username = username.strip()
+                if username:
+                    break
+                await websocket.send("Username cannot be empty or spaces. Please enter a valid username.")
+
             self.clients[websocket] = username
             await websocket.send(f"Welcome, {username}!")
             await self.send_all_messages(websocket)
@@ -185,66 +185,39 @@ class ChatServer:
                 await self.broadcast(message, websocket)
         except websockets.ConnectionClosed:
             await self.remove_client(websocket)
-
-    async def broadcast(self, message, websocket):
-        timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
-        username = self.clients.get(websocket, "unknown")
-        message_dict = {'timestamp': timestamp, 'username': username, 'message': message}
-        await self.broadcast_aprs_message(json.dumps(message_dict))
-
-    async def broadcast_aprs_message(self, message):
-        for client in list(self.clients.keys()):
-            try:
-                await client.send(message)
-            except Exception:
-                await self.remove_client(client)
-
-    async def send_all_messages(self, websocket):
-        self.cursor.execute(f'SELECT timestamp, username, message FROM {TABLE_NAME} ORDER BY id')
-        messages = self.cursor.fetchall()
-        for timestamp, username, message in messages:
-            await websocket.send(json.dumps({'timestamp': timestamp, 'username': username, 'message': message}))
+        except Exception as e:
+            print(f"Error: {e}")
+            await self.remove_client(websocket)
 
     async def remove_client(self, websocket):
         if websocket in self.clients:
+            username = self.clients[websocket]
+            print(f"Removing client: {username}")
             del self.clients[websocket]
-        await websocket.close()
+            await websocket.close()
 
     async def start(self):
-        self.server = await websockets.serve(self.handle_client, self.host, self.port)
+        server = await websockets.serve(self.handle_client, self.host, self.port)
         print(f"Server started on {self.host}:{self.port}")
-        await self.server.wait_closed()
+        await server.wait_closed()
 
     def cleanup(self, signum, frame):
-        print("Shutting down server...")
-
-        for client in list(self.clients.keys()):
+        print(f"Shutting down server...")
+        for client in self.clients:
             asyncio.create_task(client.close())
-
         self.conn.close()
         self.aprs_app.stop()
-        self.http_server_thread.stop()
-
-        loop = asyncio.get_running_loop()
-
-        tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()]
-        for task in tasks:
-            task.cancel()
-        
-        loop.stop()
         sys.exit(0)
 
+
 if __name__ == "__main__":
-    server = ChatServer(WEBSOCKET_LISTEN_ADDRESS, WEBSOCKET_PORT, AGW_SERVER, AGW_PORT, SRC_CALLSIGN, USE_COMPRESSION)
+    parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
+    parser.add_argument('--agw-server', type=str, default='orangepizero2w', help='APRS AGW server host (default: orangepizero2w)')
+    parser.add_argument('--agw-port', type=int, default=8002, help='APRS AGW server port (default: 8002)')
+    parser.add_argument('--src-callsign', type=str, default='K3DEP', help='Source callsign (default: K3DEP)')
+    parser.add_argument('--use-compression', type=bool, default=True, help='Enable message compression (default: True)')
+    
+    args = parser.parse_args()
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    try:
-        loop.run_until_complete(server.start())
-    except KeyboardInterrupt:
-        server.cleanup(None, None)
-    finally:
-        loop.run_until_complete(asyncio.sleep(0))  # Ensure all cleanup tasks complete
-        loop.close()
-        sys.exit(0)  # Force exit
+    server = ChatServer(HOST, PORT, args.agw_server, args.agw_port, args.src_callsign, args.use_compression)
+    asyncio.run(server.start())
