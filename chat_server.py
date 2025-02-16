@@ -18,6 +18,7 @@ import base64
 import configparser
 
 CONFIG_FILE = 'chat_server.conf'
+HOSTNAME = socket.gethostname()
 
 def load_config():
     config = configparser.ConfigParser()
@@ -25,10 +26,11 @@ def load_config():
         config['DEFAULT'] = {
             'SRC_CALLSIGN': 'N0CALL',
             'DEST_CALLSIGN': 'APRS',
+            'HOSTNAME': HOSTNAME,
             'WEBSOCKET_HOST': '0.0.0.0',
             'WEBSOCKET_PORT': '6789',
             'HTTP_PORT': '8080',
-            'AGW_SERVER': socket.gethostname(),
+            'AGW_SERVER': HOSTNAME,
             'AGW_PORT': '8000',
             'DB_NAME': 'chat_messages.db',
             'TABLE_NAME': 'messages',
@@ -45,10 +47,12 @@ def load_config():
 
 config = load_config()
 SRC_CALLSIGN = config.get('SRC_CALLSIGN', 'N0CALL')
-WEBSOCKET_HOST = config.get('WEBSOCKET_HOST', '0.0.0.0')
+DEST_CALLSIGN = config.get('DEST_CALLSIGN', 'APRS')
+HOSTNAME = config.get('HOSTNAME', HOSTNAME)
+WEBSOCKET_LISTEN_ADDRESS = config.get('WEBSOCKET_LISTEN_ADDRESS', '0.0.0.0')
 WEBSOCKET_PORT = int(config.get('WEBSOCKET_PORT', 6789))
 HTTP_PORT = int(config.get('HTTP_PORT', 8080))
-AGW_SERVER = config.get('AGW_SERVER', socket.gethostname())
+AGW_SERVER = config.get('AGW_SERVER', hostname)
 AGW_PORT = int(config.get('AGW_PORT', 8000))
 DB_NAME = config.get('DB_NAME', 'chat_messages.db')
 TABLE_NAME = config.get('TABLE_NAME', 'messages')
@@ -64,7 +68,7 @@ class SingleFileHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            config_data = json.dumps({"host": WEBSOCKET_HOST, "port": WEBSOCKET_PORT})
+            config_data = json.dumps({"host": AGW_SERVER, "port": WEBSOCKET_PORT})
             self.wfile.write(config_data.encode())
             return
         
@@ -231,7 +235,7 @@ class ChatServer:
         sys.exit(0)
 
 if __name__ == "__main__":
-    server = ChatServer(WEBSOCKET_HOST, WEBSOCKET_PORT, AGW_SERVER, AGW_PORT, SRC_CALLSIGN, USE_COMPRESSION)
+    server = ChatServer(WEBSOCKET_LISTEN_ADDRESS, WEBSOCKET_PORT, AGW_SERVER, AGW_PORT, SRC_CALLSIGN, USE_COMPRESSION)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
