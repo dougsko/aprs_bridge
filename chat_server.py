@@ -171,7 +171,7 @@ class ChatServer:
 
     def cleanup(self, signum, frame):
         print("Shutting down server...")
-        
+
         for client in list(self.clients.keys()):
             asyncio.create_task(client.close())
 
@@ -180,9 +180,12 @@ class ChatServer:
         self.http_server_thread.stop()
         
         loop = asyncio.get_running_loop()
-        loop.call_soon_threadsafe(loop.stop)
-
-
+        
+        for task in asyncio.all_tasks(loop):
+            if task is not asyncio.current_task(loop):
+                task.cancel()
+        
+        loop.stop()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
@@ -194,7 +197,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     server = ChatServer(HOST, PORT, args.agw_server, args.agw_port, args.src_callsign, args.use_compression)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     try:
-        asyncio.run(server.start())
+        loop.run_until_complete(server.start())
     except KeyboardInterrupt:
         server.cleanup(None, None)
+    finally:
+        loop.run_until_complete(asyncio.sleep(0))  # Allow all cleanup tasks to finish
+        loop.close()
