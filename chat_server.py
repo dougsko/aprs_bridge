@@ -15,14 +15,37 @@ import pe.app
 import zlib
 import json
 import base64
+import configparser
 
-HOST = '0.0.0.0'
-PORT = 6789
-HTTP_PORT = 8080
-DB_NAME = 'chat_messages.db'
-TABLE_NAME = 'messages'
-MAX_ROWS = 100
-DEST_CALLSIGN = 'APRS'
+CONFIG_FILE = 'chat_server.conf'
+
+def load_config():
+    config = configparser.ConfigParser()
+    if not os.path.exists(CONFIG_FILE):
+        config['DEFAULT'] = {
+            'HOST': '0.0.0.0',
+            'PORT': '6789',
+            'HTTP_PORT': '8080',
+            'DB_NAME': 'chat_messages.db',
+            'TABLE_NAME': 'messages',
+            'MAX_ROWS': '100',
+            'DEST_CALLSIGN': 'APRS'
+        }
+        with open(CONFIG_FILE, 'w') as configfile:
+            config.write(configfile)
+        print(f"Config file '{CONFIG_FILE}' created. Please edit it before running the server.")
+        sys.exit(1)
+    config.read(CONFIG_FILE)
+    return config['DEFAULT']
+
+config = load_config()
+HOST = config.get('HOST', '0.0.0.0')
+PORT = int(config.get('PORT', 6789))
+HTTP_PORT = int(config.get('HTTP_PORT', 8080))
+DB_NAME = config.get('DB_NAME', 'chat_messages.db')
+TABLE_NAME = config.get('TABLE_NAME', 'messages')
+MAX_ROWS = int(config.get('MAX_ROWS', 100))
+DEST_CALLSIGN = config.get('DEST_CALLSIGN', 'APRS')
 WEB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_client.html")
 
 class SingleFileHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -93,12 +116,7 @@ class APRSReceiveHandler(pe.ReceiveHandler):
         await self.irc_server.broadcast_aprs_message(json.dumps(message_dict))
 
 class ChatServer:
-    def __init__(self, host, port, agw_server, agw_port, src_callsign, use_compression):
-        self.host = host
-        self.port = port
-        self.agw_server = agw_server
-        self.agw_port = agw_port
-        self.src_callsign = src_callsign
+    def __init__(self, use_compression):
         self.use_compression = use_compression
         self.clients = {}
         self.http_server_thread = HTTPServerThread(HTTP_PORT)
@@ -124,91 +142,35 @@ class ChatServer:
     def init_aprs(self):
         self.aprs_app = pe.app.Application()
         self.aprs_app.use_custom_handler(APRSReceiveHandler(self))
-        self.aprs_app.start(self.agw_server, self.agw_port)
+        self.aprs_app.start(HOST, PORT)
         self.aprs_app.enable_monitoring = True
 
-    async def handle_client(self, websocket):
-        try:
-            await websocket.send("Enter your username: ")
-            username = await websocket.recv()
-            username = username.strip()
-            self.clients[websocket] = username
-            await websocket.send(f"Welcome, {username}!")
-            await self.send_all_messages(websocket)
-            async for message in websocket:
-                await self.broadcast(message, websocket)
-        except websockets.ConnectionClosed:
-            await self.remove_client(websocket)
-
-    async def broadcast(self, message, websocket):
-        timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
-        username = self.clients.get(websocket, "unknown")
-        message_dict = {'timestamp': timestamp, 'username': username, 'message': message}
-        await self.broadcast_aprs_message(json.dumps(message_dict))
-
-    async def broadcast_aprs_message(self, message):
-        for client in list(self.clients.keys()):
-            try:
-                await client.send(message)
-            except Exception:
-                await self.remove_client(client)
-
-    async def send_all_messages(self, websocket):
-        self.cursor.execute(f'SELECT timestamp, username, message FROM {TABLE_NAME} ORDER BY id')
-        messages = self.cursor.fetchall()
-        for timestamp, username, message in messages:
-            await websocket.send(json.dumps({'timestamp': timestamp, 'username': username, 'message': message}))
-
-    async def remove_client(self, websocket):
-        if websocket in self.clients:
-            del self.clients[websocket]
-        await websocket.close()
-
     async def start(self):
-        self.server = await websockets.serve(self.handle_client, self.host, self.port)
-        print(f"Server started on {self.host}:{self.port}")
+        self.server = await websockets.serve(self.handle_client, HOST, PORT)
+        print(f"Server started on {HOST}:{PORT}")
         await self.server.wait_closed()
 
     def cleanup(self, signum, frame):
         print("Shutting down server...")
-
-        for client in list(self.clients.keys()):
-            asyncio.create_task(client.close())
-
         self.conn.close()
         self.aprs_app.stop()
         self.http_server_thread.stop()
-
         loop = asyncio.get_running_loop()
-
         tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()]
         for task in tasks:
             task.cancel()
-        
         loop.stop()
-
-        sys.exit(0)  # Ensure script exits
-
+        sys.exit(0)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
-    parser.add_argument('--agw-server', type=str, default='orangepizero2w', help='APRS AGW server host')
-    parser.add_argument('--agw-port', type=int, default=8002, help='APRS AGW server port')
-    parser.add_argument('--src-callsign', type=str, default='K3DEP', help='Source callsign')
-    parser.add_argument('--use-compression', type=bool, default=True, help='Enable message compression')
-    
-    args = parser.parse_args()
-
-    server = ChatServer(HOST, PORT, args.agw_server, args.agw_port, args.src_callsign, args.use_compression)
-
+    server = ChatServer(use_compression=True)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-
     try:
         loop.run_until_complete(server.start())
     except KeyboardInterrupt:
         server.cleanup(None, None)
     finally:
-        loop.run_until_complete(asyncio.sleep(0))  # Ensure all cleanup tasks complete
+        loop.run_until_complete(asyncio.sleep(0))
         loop.close()
-        sys.exit(0)  # Force exit
+        sys.exit(0)
