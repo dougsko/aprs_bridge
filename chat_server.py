@@ -24,6 +24,7 @@ def load_config():
     config = configparser.ConfigParser()
     if not os.path.exists(CONFIG_FILE):
         config['DEFAULT'] = {
+            'SRC_CALLSIGN': 'N0CALL',
             'HOST': '0.0.0.0',
             'PORT': '6789',
             'HTTP_PORT': '8080',
@@ -33,7 +34,8 @@ def load_config():
             'TABLE_NAME': 'messages',
             'MAX_ROWS': '100',
             'DEST_CALLSIGN': 'APRS',
-            'WEB_CLIENT_NAME': 'web_client.html'
+            'WEB_CLIENT_NAME': 'web_client.html',
+            'USE_COMPRESSION': 'true'
         }
         with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)
@@ -43,6 +45,7 @@ def load_config():
     return config['DEFAULT']
 
 config = load_config()
+SRC_CALLSIGN = config.get('SRC_CALLSIGN', 'N0CALL')
 HOST = config.get('HOST', '0.0.0.0')
 PORT = int(config.get('PORT', 6789))
 HTTP_PORT = int(config.get('HTTP_PORT', 8080))
@@ -53,6 +56,7 @@ TABLE_NAME = config.get('TABLE_NAME', 'messages')
 MAX_ROWS = int(config.get('MAX_ROWS', 100))
 DEST_CALLSIGN = config.get('DEST_CALLSIGN', 'APRS')
 WEB_CLIENT_NAME = config.get('WEB_CLIENT_NAME', 'web_client.html')
+USE_COMPRESSION = bool(config.get('USE_COMPRESSION', 'TRUE'))
 WEB_CLIENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), WEB_CLIENT_NAME)
 
 class SingleFileHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -219,15 +223,7 @@ class ChatServer:
         sys.exit(0)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
-    parser.add_argument('--agw-server', type=str, default='orangepizero2w', help='APRS AGW server host')
-    parser.add_argument('--agw-port', type=int, default=8002, help='APRS AGW server port')
-    parser.add_argument('--src-callsign', type=str, default='K3DEP', help='Source callsign')
-    parser.add_argument('--use-compression', type=bool, default=True, help='Enable message compression')
-    
-    args = parser.parse_args()
-
-    server = ChatServer(HOST, PORT, AGW_SERVER, AGW_PORT, args.src_callsign, args.use_compression)
+    server = ChatServer(HOST, PORT, AGW_SERVER, AGW_PORT, SRC_CALLSIGN, USE_COMPRESSION)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
