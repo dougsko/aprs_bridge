@@ -178,14 +178,17 @@ class ChatServer:
         self.conn.close()
         self.aprs_app.stop()
         self.http_server_thread.stop()
-        
+
         loop = asyncio.get_running_loop()
-        
-        for task in asyncio.all_tasks(loop):
-            if task is not asyncio.current_task(loop):
-                task.cancel()
+
+        tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()]
+        for task in tasks:
+            task.cancel()
         
         loop.stop()
+
+        sys.exit(0)  # Ensure script exits
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='WebSocket Chat Server with APRS integration.')
@@ -206,5 +209,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         server.cleanup(None, None)
     finally:
-        loop.run_until_complete(asyncio.sleep(0))  # Allow all cleanup tasks to finish
+        loop.run_until_complete(asyncio.sleep(0))  # Ensure all cleanup tasks complete
         loop.close()
+        sys.exit(0)  # Force exit
