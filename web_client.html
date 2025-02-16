@@ -132,7 +132,7 @@
             try {
                 const response = await fetch('/config');
                 const config = await response.json();
-                return `ws://${config.host}:${config.port}`;
+                return `ws://${config.websocket_host}:${config.websocket_port}`;
             } catch (error) {
                 console.error('Failed to load config, using default:', error);
                 return 'ws://localhost:6789';
